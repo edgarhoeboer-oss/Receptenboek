@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -25,7 +24,6 @@ const { useState, useMemo, useEffect, useRef, useCallback } = React;
 const CATEGORIES = ["Ontbijt","Lunch","Diner","Dessert","Snack","Drank","Bakken","Vegetarisch","Vis","Vlees","Soep","Salade"];
 const CUISINES   = ["Nederlands","Italiaans","Aziatisch","Frans","Spaans","Mexicaans","Midden-Oosten","Grieks","Indiaas","Overig"];
 const SEASONS    = ["Lente","Zomer","Herfst","Winter","Heel het jaar"];
-const JSONBIN_KEY = "__jsonbin_id__";
 
 const EMPTY_FORM = {
   title:"",category:CATEGORIES[2],cuisine:CUISINES[0],
@@ -40,13 +38,10 @@ const SAMPLE = [
   {id:3,title:"Thaise Groene Curry",category:"Diner",cuisine:"Aziatisch",source:"Boodschappen magazine",sourceType:"tijdschrift",time:35,servings:4,tags:["pittig","coconut","snel"],ingredients:["2 el groene currypasta","400ml kokosmelk","500g kipfilet","1 aubergine","Vissaus","Verse basilicum","Jasmijnrijst"],instructions:"Bak currypasta 1 min. Voeg kokosmelk toe. Voeg kip toe, kook 10 min. Voeg aubergine toe, nog 10 min. Breng op smaak. Serveer met rijst.",rating:4,notes:"Minder pasta voor kinderen",date:"2024-02-20",image:"🍛",season:"Heel het jaar"},
 ];
 
-// ── LOCAL STORAGE ──────────────────────────────────────────
 const STORE_KEY = "receptenboek_v4";
 const loadLocal = () => { try{const d=localStorage.getItem(STORE_KEY);return d?JSON.parse(d):SAMPLE;}catch{return SAMPLE;} };
 const saveLocal = r => { try{localStorage.setItem(STORE_KEY,JSON.stringify(r));}catch{} };
 
-// ── JSONBIN ────────────────────────────────────────────────
-const MASTER_KEY = "$2a$10$placeholder"; // user fills in
 async function jsonbinSave(binId, apiKey, recipes) {
   const r = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
     method:"PUT", headers:{"Content-Type":"application/json","X-Master-Key":apiKey},
@@ -72,7 +67,6 @@ async function jsonbinCreate(apiKey, recipes) {
   return d.metadata?.id || null;
 }
 
-// ── HELPERS ────────────────────────────────────────────────
 const srcIcon = t=>({krant:"📰",web:"🌐",tijdschrift:"📖",eigen:"✍️"}[t]||"📌");
 const iStyle  = {width:"100%",padding:"0.55rem 0.8rem",borderRadius:8,border:"1px solid #ddd",fontSize:"0.88rem",fontFamily:"'Lato',sans-serif",boxSizing:"border-box",background:"#fafafa"};
 const selStyle= {...iStyle,cursor:"pointer"};
@@ -91,7 +85,6 @@ const Stars = ({rating,onRate}) => (
   </div>
 );
 
-// ── OVERLAY ────────────────────────────────────────────────
 function Overlay({children,onClose}) {
   return (
     <div onClick={e=>{if(e.target===e.currentTarget)onClose();}}
@@ -101,7 +94,6 @@ function Overlay({children,onClose}) {
   );
 }
 
-// ── FORM FIELDS ────────────────────────────────────────────
 function FormFields({form,setForm}) {
   const f = field => e => setForm(p=>({...p,[field]:e.target.value}));
   return (
@@ -132,7 +124,6 @@ function FormFields({form,setForm}) {
   );
 }
 
-// ── SCAN MODAL (Puter.js - gratis AI) ─────────────────────
 function ScanModal({onClose,onImport}) {
   const [step,setStep]       = useState("choose");
   const [imgData,setImgData] = useState(null);
@@ -164,7 +155,7 @@ function ScanModal({onClose,onImport}) {
       });
       setStep("result");
     } catch(e) {
-      setError("Scannen mislukt: "+e.message+". Probeer opnieuw of log in op puter.com");
+      setError("Scannen mislukt: "+e.message+". Log in op puter.com en probeer opnieuw.");
       setStep("preview");
     }
   };
@@ -190,10 +181,9 @@ function ScanModal({onClose,onImport}) {
         </div>
         <div style={{padding:"1.5rem"}}>
           <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"0.8rem 1rem",marginBottom:"1.25rem",fontSize:"0.83rem",color:"#166534"}}>
-            ✅ Gratis AI via <strong>Puter.com</strong> — maak een gratis account aan op <a href="https://puter.com" target="_blank" style={{color:"#166534"}}>puter.com</a> als het niet werkt.
+            ✅ Gratis AI via <strong>Puter.com</strong> — zorg dat je ingelogd bent op <a href="https://puter.com" target="_blank" style={{color:"#166534"}}>puter.com</a>.
           </div>
           {error && <div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"0.7rem 1rem",marginBottom:"1rem",fontSize:"0.84rem"}}>⚠️ {error}</div>}
-
           {step==="choose" && (
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1rem"}}>
               {[["🖼️","Afbeelding uploaden","JPG · PNG · WEBP",fileRef],["📷","Camera gebruiken","Maak een foto",cameraRef]].map(([icon,title,sub,ref])=>(
@@ -210,7 +200,6 @@ function ScanModal({onClose,onImport}) {
               <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
             </div>
           )}
-
           {(step==="preview"||step==="scanning") && imgData && (
             <div>
               <img src={imgData} alt="" style={{width:"100%",borderRadius:10,maxHeight:280,objectFit:"contain",background:"#f0ebe3"}}/>
@@ -218,10 +207,8 @@ function ScanModal({onClose,onImport}) {
                 style={{marginTop:"1rem",width:"100%",padding:"0.85rem",background:step==="scanning"?"#ccc":"#2c1810",color:"white",border:"none",borderRadius:10,cursor:step==="scanning"?"wait":"pointer",fontSize:"0.95rem",fontWeight:700}}>
                 {step==="scanning"?"⏳ AI scant het recept…":"🔍 Scan met gratis AI"}
               </button>
-              {step==="scanning" && <p style={{textAlign:"center",color:"#999",fontSize:"0.8rem",marginTop:"0.5rem"}}>Even geduld…</p>}
             </div>
           )}
-
           {step==="result" && editForm && (
             <div>
               <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"0.7rem 1rem",marginBottom:"1.25rem",fontSize:"0.83rem",color:"#166534"}}>✅ Gescand! Controleer en pas aan waar nodig.</div>
@@ -238,7 +225,6 @@ function ScanModal({onClose,onImport}) {
   );
 }
 
-// ── URL IMPORT MODAL ───────────────────────────────────────
 function UrlModal({onClose,onImport}) {
   const [url,setUrl]         = useState("");
   const [step,setStep]       = useState("input");
@@ -250,11 +236,24 @@ function UrlModal({onClose,onImport}) {
     setError(""); setStep("loading");
     let pageText="";
     try {
-      const proxyUrl=`https://api.allorigins.win/get?url=${encodeURIComponent(url.trim())}`;
-      const proxyRes=await fetch(proxyUrl);
-      const proxyData=await proxyRes.json();
-      pageText=proxyData.contents.replace(/<script[^>]*>[\s\S]*?<\/script>/gi,"").replace(/<style[^>]*>[\s\S]*?<\/style>/gi,"").replace(/<[^>]+>/g," ").replace(/\s{2,}/g," ").trim().slice(0,6000);
-    } catch(e) {setError("Pagina kon niet worden opgehaald.");setStep("input");return;}
+      const proxies = [
+        u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+      ];
+      let raw="";
+      for(const proxy of proxies) {
+        try {
+          const res = await fetch(proxy(url.trim()));
+          if(!res.ok) continue;
+          const ct = res.headers.get("content-type")||"";
+          raw = ct.includes("json") ? (await res.json()).contents||"" : await res.text();
+          if(raw && raw.length > 200) break;
+        } catch(e) { continue; }
+      }
+      if(!raw) throw new Error("Alle proxies mislukt");
+      pageText=raw.replace(/<script[^>]*>[\s\S]*?<\/script>/gi,"").replace(/<style[^>]*>[\s\S]*?<\/style>/gi,"").replace(/<[^>]+>/g," ").replace(/\s{2,}/g," ").trim().slice(0,6000);
+    } catch(e) {setError("Pagina kon niet worden opgehaald. Probeer een andere URL.");setStep("input");return;}
     try {
       const prompt = `Extraheer het recept uit deze webpagina-tekst. Geef ALLEEN geldig JSON:\n{"title":"...","category":"Diner","cuisine":"Nederlands","time":30,"servings":4,"tags":["tag1"],"ingredients":["500g bloem"],"instructions":"Bereiding.","notes":"Tips.","image":"emoji"}\nCategorieën: ${CATEGORIES.join(",")}\nKeukens: ${CUISINES.join(",")}\n\nTekst:\n${pageText}`;
       const response = await puter.ai.chat(prompt);
@@ -323,7 +322,6 @@ function UrlModal({onClose,onImport}) {
   );
 }
 
-// ── RECIPE MODAL ───────────────────────────────────────────
 function RecipeModal({initial,onClose,onSave}) {
   const [form,setForm] = useState(()=>initial?{...initial,
     tags:Array.isArray(initial.tags)?initial.tags.join(", "):initial.tags||"",
@@ -357,7 +355,6 @@ function RecipeModal({initial,onClose,onSave}) {
   );
 }
 
-// ── SYNC MODAL (JSONbin) ───────────────────────────────────
 function SyncModal({onClose,onSynced,currentRecipes}) {
   const [apiKey,setApiKey]   = useState(()=>localStorage.getItem("jb_key")||"");
   const [binId,setBinId]     = useState(()=>localStorage.getItem("jb_bin")||"");
@@ -440,7 +437,6 @@ function SyncModal({onClose,onSynced,currentRecipes}) {
   );
 }
 
-// ── RECIPE DETAIL ──────────────────────────────────────────
 function RecipeDetail({recipe,onBack,onDelete,onRate,onEdit}) {
   if(!recipe) return null;
   const ingr=Array.isArray(recipe.ingredients)?recipe.ingredients:[recipe.ingredients].filter(Boolean);
@@ -505,7 +501,6 @@ function RecipeDetail({recipe,onBack,onDelete,onRate,onEdit}) {
   );
 }
 
-// ── CARDS ──────────────────────────────────────────────────
 function RecipeCard({recipe,onClick}) {
   return (
     <div onClick={onClick} style={{background:"white",borderRadius:12,overflow:"hidden",border:"1px solid #e8e0d4",cursor:"pointer",transition:"transform 0.15s,box-shadow 0.15s",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}
@@ -546,7 +541,6 @@ function RecipeRow({recipe,onClick}) {
   );
 }
 
-// ── MAIN APP ───────────────────────────────────────────────
 function App() {
   const [recipes,setRecipes]       = useState(loadLocal);
   const [search,setSearch]         = useState("");
@@ -563,7 +557,6 @@ function App() {
   const [readOnly,setReadOnly]     = useState(false);
   const syncTimer = useRef(null);
 
-  // Check if opened as share link
   useEffect(()=>{
     const params = new URLSearchParams(window.location.search);
     const shareId = params.get("share");
@@ -573,14 +566,12 @@ function App() {
       if(key) {
         jsonbinLoad(shareId,key).then(data=>{ if(data){setRecipes(data);saveLocal(data);} });
       } else {
-        // Load as public bin
         fetch(`https://api.jsonbin.io/v3/b/${shareId}/latest`)
           .then(r=>r.json()).then(d=>{ if(d.record?.recipes){setRecipes(d.record.recipes);} }).catch(()=>{});
       }
     }
   },[]);
 
-  // Auto-sync to JSONbin after changes
   useEffect(()=>{
     saveLocal(recipes);
     if(!jbKey||!jbBin||readOnly) return;
@@ -613,13 +604,11 @@ function App() {
   return (
     <div>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Lato:wght@400;600;700&display=swap');`}</style>
-
       {readOnly && (
         <div style={{background:"#1e3a5f",color:"white",textAlign:"center",padding:"0.5rem",fontSize:"0.82rem"}}>
           👁 Je bekijkt dit receptenboek als gast — je kunt niets bewerken
         </div>
       )}
-
       <header style={{background:"#2c1810",color:"#faf7f2"}}>
         <div style={{maxWidth:1280,margin:"0 auto",padding:"1.1rem 2rem",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"1rem",flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"baseline",gap:"0.75rem",cursor:"pointer"}} onClick={()=>setPage("list")}>
@@ -631,10 +620,7 @@ function App() {
           </div>
           {!readOnly && (
             <div style={{display:"flex",gap:"0.6rem",alignItems:"center",flexWrap:"wrap"}}>
-              <button onClick={()=>setModal("sync")}
-                style={{...ghostBtn,borderColor:jbBin?"rgba(52,211,153,0.5)":"rgba(255,255,255,0.25)",color:jbBin?"#6ee7b7":"#faf7f2"}}>
-                {syncLabel}
-              </button>
+              <button onClick={()=>setModal("sync")} style={{...ghostBtn,borderColor:jbBin?"rgba(52,211,153,0.5)":"rgba(255,255,255,0.25)",color:jbBin?"#6ee7b7":"#faf7f2"}}>{syncLabel}</button>
               <button onClick={()=>setModal("url")} style={{...ghostBtn,borderColor:"rgba(96,165,250,0.55)",color:"#93c5fd"}}>🌐 Van website</button>
               <button onClick={()=>setModal("scan")} style={{...ghostBtn,borderColor:"rgba(217,119,6,0.55)",color:"#fbbf24"}}>📸 Scan recept</button>
               <button onClick={()=>setModal("add")} style={{background:"#d97706",color:"white",border:"none",borderRadius:8,padding:"0.55rem 1.2rem",cursor:"pointer",fontWeight:700,fontSize:"0.88rem"}}>+ Nieuw recept</button>
@@ -642,12 +628,10 @@ function App() {
           )}
         </div>
       </header>
-
       {page==="list" && (
         <div style={{background:"#f0ebe3",borderBottom:"1px solid #e0d8cc",position:"sticky",top:0,zIndex:10}}>
           <div style={{maxWidth:1280,margin:"0 auto",padding:"0.8rem 2rem",display:"flex",gap:"0.65rem",flexWrap:"wrap",alignItems:"center"}}>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Zoek op naam, ingrediënt of tag…"
-              style={{flex:"1 1 180px",padding:"0.5rem 1rem",borderRadius:8,border:"1px solid #d0c8bc",background:"white",fontSize:"0.87rem"}}/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Zoek op naam, ingrediënt of tag…" style={{flex:"1 1 180px",padding:"0.5rem 1rem",borderRadius:8,border:"1px solid #d0c8bc",background:"white",fontSize:"0.87rem"}}/>
             <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...selStyle,flex:"0 0 auto",width:"auto",background:"white"}}>
               <option value="Alles">Alle categorieën</option>
               {CATEGORIES.map(c=><option key={c}>{c}</option>)}
@@ -678,7 +662,6 @@ function App() {
           </div>
         </div>
       )}
-
       <main style={{maxWidth:1280,margin:"0 auto",padding:"1.5rem 2rem 4rem"}}>
         {page==="detail"&&selected?(
           <RecipeDetail recipe={selected} onBack={()=>setPage("list")} onDelete={del} onRate={rate} onEdit={()=>setModal("edit")}/>
@@ -698,7 +681,6 @@ function App() {
           </div>
         )}
       </main>
-
       {modal==="sync" && <SyncModal onClose={()=>setModal(null)} currentRecipes={recipes} onSynced={(k,b)=>{setJbKey(k);setJbBin(b);setSyncStatus("synced");}}/>}
       {modal==="scan" && <ScanModal onClose={()=>setModal(null)} onImport={r=>{add(r);open(r.id);}}/>}
       {modal==="url"  && <UrlModal  onClose={()=>setModal(null)} onImport={r=>{add(r);open(r.id);}}/>}
