@@ -1,1 +1,714 @@
-test
+
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mijn Receptenboek</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://js.puter.com/v2/"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Lato:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *{box-sizing:border-box;} body{margin:0;background:#faf7f2;font-family:'Lato',sans-serif;}
+    ::-webkit-scrollbar{width:6px;} ::-webkit-scrollbar-thumb{background:#d0c8bc;border-radius:3px;}
+    input,textarea,select{outline:none;}
+    input:focus,textarea:focus,select:focus{border-color:#2c1810!important;box-shadow:0 0 0 2px rgba(44,24,16,0.1);}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+const CATEGORIES = ["Ontbijt","Lunch","Diner","Dessert","Snack","Drank","Bakken","Vegetarisch","Vis","Vlees","Soep","Salade"];
+const CUISINES   = ["Nederlands","Italiaans","Aziatisch","Frans","Spaans","Mexicaans","Midden-Oosten","Grieks","Indiaas","Overig"];
+const SEASONS    = ["Lente","Zomer","Herfst","Winter","Heel het jaar"];
+const JSONBIN_KEY = "__jsonbin_id__";
+
+const EMPTY_FORM = {
+  title:"",category:CATEGORIES[2],cuisine:CUISINES[0],
+  source:"",sourceType:"krant",time:"",servings:"4",
+  tags:"",ingredients:"",instructions:"",notes:"",
+  image:"🍽️",rating:0,season:"Heel het jaar"
+};
+
+const SAMPLE = [
+  {id:1,title:"Hollandse Erwtensoep",category:"Soep",cuisine:"Nederlands",source:"NRC Handelsblad",sourceType:"krant",time:90,servings:6,tags:["winterkost","traditioneel"],ingredients:["500g spliterwten","1 rookworst","3 wortelen","2 stengels selderij","1 prei","2 aardappelen","Zout & peper"],instructions:"Week de erwten een nacht. Kook ze in 2L water 30 min. Voeg groenten toe, kook 45 min. Voeg rookworst toe laatste 15 min. Breng op smaak.",rating:5,notes:"Lekkerder de volgende dag!",date:"2024-01-15",image:"🍲",season:"Winter"},
+  {id:2,title:"Tiramisu",category:"Dessert",cuisine:"Italiaans",source:"ah.nl/recepten",sourceType:"web",time:30,servings:8,tags:["klassiek","koffie","feestelijk"],ingredients:["500g mascarpone","4 eieren","100g suiker","300ml sterke koffie","200g lange vingers","Cacao poeder"],instructions:"Klop eidooiers met suiker. Meng met mascarpone. Klop eiwitten stijf en spatel erdoor. Doop koekjes in koffie. Maak laagjes. Bestrooi met cacao. Koel 4 uur.",rating:5,notes:"Gebruik verse eieren",date:"2024-02-03",image:"🍮",season:"Heel het jaar"},
+  {id:3,title:"Thaise Groene Curry",category:"Diner",cuisine:"Aziatisch",source:"Boodschappen magazine",sourceType:"tijdschrift",time:35,servings:4,tags:["pittig","coconut","snel"],ingredients:["2 el groene currypasta","400ml kokosmelk","500g kipfilet","1 aubergine","Vissaus","Verse basilicum","Jasmijnrijst"],instructions:"Bak currypasta 1 min. Voeg kokosmelk toe. Voeg kip toe, kook 10 min. Voeg aubergine toe, nog 10 min. Breng op smaak. Serveer met rijst.",rating:4,notes:"Minder pasta voor kinderen",date:"2024-02-20",image:"🍛",season:"Heel het jaar"},
+];
+
+// ── LOCAL STORAGE ──────────────────────────────────────────
+const STORE_KEY = "receptenboek_v4";
+const loadLocal = () => { try{const d=localStorage.getItem(STORE_KEY);return d?JSON.parse(d):SAMPLE;}catch{return SAMPLE;} };
+const saveLocal = r => { try{localStorage.setItem(STORE_KEY,JSON.stringify(r));}catch{} };
+
+// ── JSONBIN ────────────────────────────────────────────────
+const MASTER_KEY = "$2a$10$placeholder"; // user fills in
+async function jsonbinSave(binId, apiKey, recipes) {
+  const r = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+    method:"PUT", headers:{"Content-Type":"application/json","X-Master-Key":apiKey},
+    body: JSON.stringify({recipes})
+  });
+  return r.ok;
+}
+async function jsonbinLoad(binId, apiKey) {
+  const r = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+    headers:{"X-Master-Key":apiKey}
+  });
+  if(!r.ok) return null;
+  const d = await r.json();
+  return d.record?.recipes || null;
+}
+async function jsonbinCreate(apiKey, recipes) {
+  const r = await fetch("https://api.jsonbin.io/v3/b", {
+    method:"POST", headers:{"Content-Type":"application/json","X-Master-Key":apiKey,"X-Bin-Name":"Receptenboek","X-Bin-Private":"false"},
+    body: JSON.stringify({recipes})
+  });
+  if(!r.ok) return null;
+  const d = await r.json();
+  return d.metadata?.id || null;
+}
+
+// ── HELPERS ────────────────────────────────────────────────
+const srcIcon = t=>({krant:"📰",web:"🌐",tijdschrift:"📖",eigen:"✍️"}[t]||"📌");
+const iStyle  = {width:"100%",padding:"0.55rem 0.8rem",borderRadius:8,border:"1px solid #ddd",fontSize:"0.88rem",fontFamily:"'Lato',sans-serif",boxSizing:"border-box",background:"#fafafa"};
+const selStyle= {...iStyle,cursor:"pointer"};
+const lbl     = {fontSize:"0.8rem",color:"#666",fontFamily:"'Lato',sans-serif",fontWeight:700};
+const ghostBtn= {background:"transparent",border:"1px solid rgba(255,255,255,0.25)",color:"#faf7f2",borderRadius:8,padding:"0.5rem 0.9rem",cursor:"pointer",fontSize:"0.82rem",fontFamily:"'Lato',sans-serif"};
+const sHead   = {fontSize:"0.76rem",textTransform:"uppercase",letterSpacing:"0.12em",color:"#999",margin:"0 0 0.75rem",fontFamily:"'Lato',sans-serif"};
+
+const Tag = ({children,bg="#f0ebe3",color="#5a3e2b"}) => (
+  <span style={{background:bg,color,fontSize:"0.71rem",padding:"0.18rem 0.6rem",borderRadius:20,whiteSpace:"nowrap",fontFamily:"'Lato',sans-serif",fontWeight:700}}>{children}</span>
+);
+const Stars = ({rating,onRate}) => (
+  <div style={{display:"flex",gap:1}}>
+    {[1,2,3,4,5].map(s=>(
+      <span key={s} onClick={()=>onRate?.(s)} style={{fontSize:"1rem",color:s<=rating?"#d97706":"#d1d5db",cursor:onRate?"pointer":"default"}}>★</span>
+    ))}
+  </div>
+);
+
+// ── OVERLAY ────────────────────────────────────────────────
+function Overlay({children,onClose}) {
+  return (
+    <div onClick={e=>{if(e.target===e.currentTarget)onClose();}}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem",backdropFilter:"blur(3px)"}}>
+      {children}
+    </div>
+  );
+}
+
+// ── FORM FIELDS ────────────────────────────────────────────
+function FormFields({form,setForm}) {
+  const f = field => e => setForm(p=>({...p,[field]:e.target.value}));
+  return (
+    <div style={{display:"grid",gap:"0.9rem"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 56px",gap:"0.5rem",alignItems:"end"}}>
+        <label style={lbl}>Naam recept *<br/><input value={form.title} onChange={f("title")} style={{...iStyle,marginTop:3}} placeholder="bijv. Stamppot boerenkool"/></label>
+        <label style={lbl}>Emoji<br/><input value={form.image} onChange={f("image")} style={{...iStyle,marginTop:3,textAlign:"center",fontSize:"1.3rem",padding:"0.4rem"}}/></label>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.5rem"}}>
+        <label style={lbl}>Categorie<br/><select value={form.category} onChange={f("category")} style={{...selStyle,marginTop:3}}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></label>
+        <label style={lbl}>Keuken<br/><select value={form.cuisine} onChange={f("cuisine")} style={{...selStyle,marginTop:3}}>{CUISINES.map(c=><option key={c}>{c}</option>)}</select></label>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.5rem"}}>
+        <label style={lbl}>Bron type<br/><select value={form.sourceType} onChange={f("sourceType")} style={{...selStyle,marginTop:3}}><option value="krant">📰 Krant</option><option value="web">🌐 Website</option><option value="tijdschrift">📖 Tijdschrift</option><option value="eigen">✍️ Eigen</option></select></label>
+        <label style={lbl}>Naam/URL<br/><input value={form.source} onChange={f("source")} style={{...iStyle,marginTop:3}} placeholder="NRC, ah.nl…"/></label>
+        <label style={lbl}>Seizoen<br/><select value={form.season} onChange={f("season")} style={{...selStyle,marginTop:3}}>{SEASONS.map(s=><option key={s}>{s}</option>)}</select></label>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.5rem"}}>
+        <label style={lbl}>Tijd (min)<br/><input type="number" value={form.time} onChange={f("time")} style={{...iStyle,marginTop:3}} placeholder="45"/></label>
+        <label style={lbl}>Porties<br/><input type="number" value={form.servings} onChange={f("servings")} style={{...iStyle,marginTop:3}} placeholder="4"/></label>
+      </div>
+      <label style={lbl}>Tags (komma-gescheiden)<br/><input value={form.tags} onChange={f("tags")} style={{...iStyle,marginTop:3}} placeholder="vegetarisch, snel, comfort food"/></label>
+      <label style={lbl}>Ingrediënten (één per regel)<br/><textarea value={form.ingredients} onChange={f("ingredients")} style={{...iStyle,marginTop:3,minHeight:100,resize:"vertical"}} placeholder={"500g bloem\n3 eieren\n200ml melk"}/></label>
+      <label style={lbl}>Bereiding<br/><textarea value={form.instructions} onChange={f("instructions")} style={{...iStyle,marginTop:3,minHeight:120,resize:"vertical"}} placeholder="Beschrijf de stappen…"/></label>
+      <label style={lbl}>Notities<br/><textarea value={form.notes} onChange={f("notes")} style={{...iStyle,marginTop:3,minHeight:60,resize:"vertical"}} placeholder="Tips, aanpassingen…"/></label>
+      <div><span style={lbl}>Beoordeling</span><div style={{marginTop:6}}><Stars rating={form.rating} onRate={r=>setForm(p=>({...p,rating:r}))}/></div></div>
+    </div>
+  );
+}
+
+// ── SCAN MODAL (Puter.js - gratis AI) ─────────────────────
+function ScanModal({onClose,onImport}) {
+  const [step,setStep]       = useState("choose");
+  const [imgData,setImgData] = useState(null);
+  const [imgFile,setImgFile] = useState(null);
+  const [editForm,setEditForm] = useState(null);
+  const [error,setError]     = useState("");
+  const fileRef   = useRef();
+  const cameraRef = useRef();
+
+  const handleFile = file => {
+    if(!file) return;
+    setImgFile(file);
+    const reader = new FileReader();
+    reader.onload = e => { setImgData(e.target.result); setStep("preview"); };
+    reader.readAsDataURL(file);
+  };
+
+  const scan = async () => {
+    setError(""); setStep("scanning");
+    try {
+      const prompt = `Analyseer dit recept-beeld en extraheer alle informatie. Geef ALLEEN geldig JSON terug, geen markdown:\n{"title":"...","category":"Diner","cuisine":"Nederlands","time":30,"servings":4,"tags":["tag1"],"ingredients":["500g bloem"],"instructions":"Volledige bereiding als lopende tekst.","notes":"Tips.","image":"emoji"}\nCategorieën: ${CATEGORIES.join(",")}\nKeukens: ${CUISINES.join(",")}`;
+      const response = await puter.ai.chat(prompt, imgFile);
+      const text = typeof response === "string" ? response : response?.message?.content?.[0]?.text || JSON.stringify(response);
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setEditForm({...EMPTY_FORM,...parsed,
+        tags:Array.isArray(parsed.tags)?parsed.tags.join(", "):parsed.tags||"",
+        ingredients:Array.isArray(parsed.ingredients)?parsed.ingredients.join("\n"):parsed.ingredients||"",
+        source:"",sourceType:"krant",rating:0,season:"Heel het jaar"
+      });
+      setStep("result");
+    } catch(e) {
+      setError("Scannen mislukt: "+e.message+". Probeer opnieuw of log in op puter.com");
+      setStep("preview");
+    }
+  };
+
+  const save = () => {
+    const r={...editForm,id:Date.now(),date:new Date().toISOString().split("T")[0],
+      tags:typeof editForm.tags==="string"?editForm.tags.split(",").map(t=>t.trim()).filter(Boolean):editForm.tags,
+      ingredients:typeof editForm.ingredients==="string"?editForm.ingredients.split("\n").filter(Boolean):editForm.ingredients,
+      time:Number(editForm.time),servings:Number(editForm.servings)
+    };
+    onImport(r); onClose();
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{background:"white",borderRadius:16,width:"min(620px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.2)"}}>
+        <div style={{background:"#2c1810",color:"white",padding:"1.2rem 1.75rem",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <h2 style={{margin:0,fontSize:"1.1rem",fontFamily:"'Playfair Display',serif"}}>📸 Recept scannen</h2>
+            <p style={{margin:0,fontSize:"0.75rem",opacity:0.55}}>Gratis via Puter AI — geen betaalrekening nodig</p>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{padding:"1.5rem"}}>
+          <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"0.8rem 1rem",marginBottom:"1.25rem",fontSize:"0.83rem",color:"#166534"}}>
+            ✅ Gratis AI via <strong>Puter.com</strong> — maak een gratis account aan op <a href="https://puter.com" target="_blank" style={{color:"#166534"}}>puter.com</a> als het niet werkt.
+          </div>
+          {error && <div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"0.7rem 1rem",marginBottom:"1rem",fontSize:"0.84rem"}}>⚠️ {error}</div>}
+
+          {step==="choose" && (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1rem"}}>
+              {[["🖼️","Afbeelding uploaden","JPG · PNG · WEBP",fileRef],["📷","Camera gebruiken","Maak een foto",cameraRef]].map(([icon,title,sub,ref])=>(
+                <button key={title} onClick={()=>ref.current.click()}
+                  style={{border:"2px dashed #d0c8bc",borderRadius:12,padding:"2rem 1rem",background:"#faf7f2",cursor:"pointer",textAlign:"center",transition:"all 0.15s"}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#2c1810";e.currentTarget.style.background="#f0ebe3";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="#d0c8bc";e.currentTarget.style.background="#faf7f2";}}>
+                  <div style={{fontSize:"2.5rem"}}>{icon}</div>
+                  <div style={{fontWeight:700,marginTop:"0.5rem"}}>{title}</div>
+                  <div style={{fontSize:"0.76rem",color:"#888"}}>{sub}</div>
+                </button>
+              ))}
+              <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+            </div>
+          )}
+
+          {(step==="preview"||step==="scanning") && imgData && (
+            <div>
+              <img src={imgData} alt="" style={{width:"100%",borderRadius:10,maxHeight:280,objectFit:"contain",background:"#f0ebe3"}}/>
+              <button onClick={scan} disabled={step==="scanning"}
+                style={{marginTop:"1rem",width:"100%",padding:"0.85rem",background:step==="scanning"?"#ccc":"#2c1810",color:"white",border:"none",borderRadius:10,cursor:step==="scanning"?"wait":"pointer",fontSize:"0.95rem",fontWeight:700}}>
+                {step==="scanning"?"⏳ AI scant het recept…":"🔍 Scan met gratis AI"}
+              </button>
+              {step==="scanning" && <p style={{textAlign:"center",color:"#999",fontSize:"0.8rem",marginTop:"0.5rem"}}>Even geduld…</p>}
+            </div>
+          )}
+
+          {step==="result" && editForm && (
+            <div>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"0.7rem 1rem",marginBottom:"1.25rem",fontSize:"0.83rem",color:"#166534"}}>✅ Gescand! Controleer en pas aan waar nodig.</div>
+              <FormFields form={editForm} setForm={setEditForm}/>
+              <div style={{display:"flex",gap:"0.75rem",marginTop:"1.5rem"}}>
+                <button onClick={()=>setStep("preview")} style={{flex:1,padding:"0.7rem",border:"1px solid #ddd",borderRadius:8,cursor:"pointer",background:"white"}}>← Opnieuw</button>
+                <button onClick={save} style={{flex:2,padding:"0.7rem",border:"none",borderRadius:8,cursor:"pointer",background:"#2c1810",color:"white",fontWeight:700}}>✓ Opslaan</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+// ── URL IMPORT MODAL ───────────────────────────────────────
+function UrlModal({onClose,onImport}) {
+  const [url,setUrl]         = useState("");
+  const [step,setStep]       = useState("input");
+  const [editForm,setEditForm] = useState(null);
+  const [error,setError]     = useState("");
+
+  const fetch_and_parse = async () => {
+    if(!url.trim()){setError("Vul een URL in.");return;}
+    setError(""); setStep("loading");
+    let pageText="";
+    try {
+      const proxyUrl=`https://api.allorigins.win/get?url=${encodeURIComponent(url.trim())}`;
+      const proxyRes=await fetch(proxyUrl);
+      const proxyData=await proxyRes.json();
+      pageText=proxyData.contents.replace(/<script[^>]*>[\s\S]*?<\/script>/gi,"").replace(/<style[^>]*>[\s\S]*?<\/style>/gi,"").replace(/<[^>]+>/g," ").replace(/\s{2,}/g," ").trim().slice(0,6000);
+    } catch(e) {setError("Pagina kon niet worden opgehaald.");setStep("input");return;}
+    try {
+      const prompt = `Extraheer het recept uit deze webpagina-tekst. Geef ALLEEN geldig JSON:\n{"title":"...","category":"Diner","cuisine":"Nederlands","time":30,"servings":4,"tags":["tag1"],"ingredients":["500g bloem"],"instructions":"Bereiding.","notes":"Tips.","image":"emoji"}\nCategorieën: ${CATEGORIES.join(",")}\nKeukens: ${CUISINES.join(",")}\n\nTekst:\n${pageText}`;
+      const response = await puter.ai.chat(prompt);
+      const text = typeof response==="string"?response:response?.message?.content?.[0]?.text||"";
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setEditForm({...EMPTY_FORM,...parsed,
+        tags:Array.isArray(parsed.tags)?parsed.tags.join(", "):parsed.tags||"",
+        ingredients:Array.isArray(parsed.ingredients)?parsed.ingredients.join("\n"):parsed.ingredients||"",
+        source:url.trim(),sourceType:"web",rating:0,season:"Heel het jaar"
+      });
+      setStep("result");
+    } catch(e) {setError("Verwerken mislukt: "+e.message);setStep("input");}
+  };
+
+  const save = () => {
+    const r={...editForm,id:Date.now(),date:new Date().toISOString().split("T")[0],
+      tags:typeof editForm.tags==="string"?editForm.tags.split(",").map(t=>t.trim()).filter(Boolean):editForm.tags,
+      ingredients:typeof editForm.ingredients==="string"?editForm.ingredients.split("\n").filter(Boolean):editForm.ingredients,
+      time:Number(editForm.time),servings:Number(editForm.servings)
+    };
+    onImport(r); onClose();
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{background:"white",borderRadius:16,width:"min(620px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.2)"}}>
+        <div style={{background:"#1e3a5f",color:"white",padding:"1.2rem 1.75rem",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <h2 style={{margin:0,fontSize:"1.1rem",fontFamily:"'Playfair Display',serif"}}>🌐 Recept van website</h2>
+            <p style={{margin:0,fontSize:"0.75rem",opacity:0.55}}>Plak een URL — AI haalt het recept automatisch op</p>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{padding:"1.5rem"}}>
+          {error && <div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"0.7rem 1rem",marginBottom:"1rem",fontSize:"0.84rem"}}>⚠️ {error}</div>}
+          {(step==="input"||step==="loading") && (
+            <div>
+              <label style={lbl}>URL van het recept<br/>
+                <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&fetch_and_parse()}
+                  placeholder="https://www.allerhande.nl/recept/..." style={{...iStyle,marginTop:3,fontSize:"0.95rem"}}/>
+              </label>
+              <div style={{marginTop:"0.75rem",fontSize:"0.8rem",color:"#888",display:"flex",gap:"0.4rem",flexWrap:"wrap"}}>
+                {["allerhande.nl","jumbo.com","15gram.nl","leukerecepten.nl","24kitchen.nl"].map(s=>(
+                  <span key={s} style={{background:"#f0ebe3",padding:"0.2rem 0.6rem",borderRadius:12,fontSize:"0.75rem"}}>{s}</span>
+                ))}
+              </div>
+              <button onClick={fetch_and_parse} disabled={step==="loading"}
+                style={{marginTop:"1.25rem",width:"100%",padding:"0.85rem",background:step==="loading"?"#ccc":"#1e3a5f",color:"white",border:"none",borderRadius:10,cursor:step==="loading"?"wait":"pointer",fontSize:"0.95rem",fontWeight:700}}>
+                {step==="loading"?"⏳ Recept wordt opgehaald…":"🔍 Haal recept op"}
+              </button>
+            </div>
+          )}
+          {step==="result" && editForm && (
+            <div>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"0.7rem 1rem",marginBottom:"1.25rem",fontSize:"0.83rem",color:"#166534"}}>✅ Recept gevonden! Controleer en pas aan.</div>
+              <FormFields form={editForm} setForm={setEditForm}/>
+              <div style={{display:"flex",gap:"0.75rem",marginTop:"1.5rem"}}>
+                <button onClick={()=>setStep("input")} style={{flex:1,padding:"0.7rem",border:"1px solid #ddd",borderRadius:8,cursor:"pointer",background:"white"}}>← Andere URL</button>
+                <button onClick={save} style={{flex:2,padding:"0.7rem",border:"none",borderRadius:8,cursor:"pointer",background:"#1e3a5f",color:"white",fontWeight:700}}>✓ Opslaan</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+// ── RECIPE MODAL ───────────────────────────────────────────
+function RecipeModal({initial,onClose,onSave}) {
+  const [form,setForm] = useState(()=>initial?{...initial,
+    tags:Array.isArray(initial.tags)?initial.tags.join(", "):initial.tags||"",
+    ingredients:Array.isArray(initial.ingredients)?initial.ingredients.join("\n"):initial.ingredients||""
+  }:{...EMPTY_FORM});
+  const save = () => {
+    if(!form.title.trim()) return;
+    onSave({...form,id:initial?.id||Date.now(),date:initial?.date||new Date().toISOString().split("T")[0],
+      tags:form.tags.split(",").map(t=>t.trim()).filter(Boolean),
+      ingredients:form.ingredients.split("\n").filter(Boolean),
+      time:Number(form.time),servings:Number(form.servings)
+    });
+    onClose();
+  };
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{background:"white",borderRadius:16,width:"min(640px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.2)"}}>
+        <div style={{background:"#2c1810",color:"white",padding:"1.2rem 1.75rem",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <h2 style={{margin:0,fontSize:"1.1rem",fontFamily:"'Playfair Display',serif"}}>{initial?"✏️ Bewerken":"📝 Nieuw recept"}</h2>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{padding:"1.5rem"}}>
+          <FormFields form={form} setForm={setForm}/>
+          <div style={{display:"flex",gap:"0.75rem",marginTop:"1.5rem"}}>
+            <button onClick={onClose} style={{flex:1,padding:"0.7rem",border:"1px solid #ddd",borderRadius:8,cursor:"pointer",background:"white"}}>Annuleren</button>
+            <button onClick={save} disabled={!form.title.trim()} style={{flex:2,padding:"0.7rem",border:"none",borderRadius:8,cursor:"pointer",background:form.title.trim()?"#2c1810":"#ccc",color:"white",fontWeight:700}}>Opslaan</button>
+          </div>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+// ── SYNC MODAL (JSONbin) ───────────────────────────────────
+function SyncModal({onClose,onSynced,currentRecipes}) {
+  const [apiKey,setApiKey]   = useState(()=>localStorage.getItem("jb_key")||"");
+  const [binId,setBinId]     = useState(()=>localStorage.getItem("jb_bin")||"");
+  const [step,setStep]       = useState("setup");
+  const [error,setError]     = useState("");
+  const [shareUrl,setShareUrl] = useState("");
+
+  const setup = async () => {
+    if(!apiKey.trim()){setError("Vul je JSONbin API-sleutel in.");return;}
+    setError(""); setStep("loading");
+    localStorage.setItem("jb_key",apiKey.trim());
+    let id = binId.trim();
+    if(!id) {
+      id = await jsonbinCreate(apiKey.trim(), currentRecipes);
+      if(!id){setError("Aanmaken mislukt. Controleer je API-sleutel.");setStep("setup");return;}
+      localStorage.setItem("jb_bin",id);
+      setBinId(id);
+    } else {
+      const ok = await jsonbinSave(id,apiKey.trim(),currentRecipes);
+      if(!ok){setError("Verbinding mislukt. Controleer je gegevens.");setStep("setup");return;}
+    }
+    const url = `${window.location.href.split("?")[0]}?share=${id}`;
+    setShareUrl(url);
+    setStep("done");
+    onSynced(apiKey.trim(),id);
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{background:"white",borderRadius:16,width:"min(600px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.2)"}}>
+        <div style={{background:"#1a6fa8",color:"white",padding:"1.2rem 1.75rem",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <h2 style={{margin:0,fontSize:"1.1rem",fontFamily:"'Playfair Display',serif"}}>☁️ Online opslaan & delen</h2>
+            <p style={{margin:0,fontSize:"0.75rem",opacity:0.55}}>Gratis via JSONbin.io — werkt op alle apparaten</p>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{padding:"1.5rem"}}>
+          {step==="setup" && (
+            <div style={{display:"grid",gap:"1rem"}}>
+              <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"1rem",fontSize:"0.85rem",lineHeight:1.7}}>
+                <strong>Hoe instellen:</strong><br/>
+                1. Ga naar <a href="https://jsonbin.io" target="_blank" style={{color:"#1a6fa8"}}>jsonbin.io</a> → maak gratis account aan<br/>
+                2. Ga naar <strong>API Keys</strong> → kopieer je <strong>Master Key</strong><br/>
+                3. Plak hem hieronder
+              </div>
+              {error && <div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"0.7rem 1rem",fontSize:"0.84rem"}}>⚠️ {error}</div>}
+              <label style={lbl}>JSONbin Master Key<br/>
+                <input value={apiKey} onChange={e=>setApiKey(e.target.value)} type="password" placeholder="$2a$10$…" style={{...iStyle,marginTop:3}}/>
+              </label>
+              <label style={lbl}>Bestaande Bin ID (leeg laten voor nieuw)<br/>
+                <input value={binId} onChange={e=>setBinId(e.target.value)} placeholder="64abc123…" style={{...iStyle,marginTop:3}}/>
+              </label>
+              <button onClick={setup} style={{padding:"0.85rem",background:"#1a6fa8",color:"white",border:"none",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:"0.95rem"}}>
+                ☁️ Opslaan & deellink aanmaken
+              </button>
+            </div>
+          )}
+          {step==="loading" && <div style={{textAlign:"center",padding:"2rem",color:"#888"}}>⏳ Verbinding maken…</div>}
+          {step==="done" && (
+            <div style={{display:"grid",gap:"1rem"}}>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"1rem",fontSize:"0.85rem",color:"#166534"}}>
+                ✅ Recepten zijn online opgeslagen!
+              </div>
+              <div>
+                <div style={{...lbl,marginBottom:6}}>Deellink voor vrienden (alleen lezen):</div>
+                <div style={{background:"#f0ebe3",borderRadius:8,padding:"0.75rem 1rem",fontSize:"0.82rem",wordBreak:"break-all",fontFamily:"monospace"}}>{shareUrl}</div>
+                <button onClick={()=>navigator.clipboard.writeText(shareUrl)} style={{marginTop:"0.5rem",padding:"0.5rem 1rem",background:"#2c1810",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:"0.82rem"}}>Kopieer link</button>
+              </div>
+              <div style={{fontSize:"0.82rem",color:"#888",lineHeight:1.6}}>
+                📱 Vrienden openen deze link en zien al jouw recepten — zonder te kunnen bewerken.<br/>
+                💻 Op een ander apparaat? Open de app en vul dezelfde API-sleutel + Bin ID in.
+              </div>
+              <button onClick={onClose} style={{padding:"0.7rem",background:"#f0ebe3",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>Sluiten</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+// ── RECIPE DETAIL ──────────────────────────────────────────
+function RecipeDetail({recipe,onBack,onDelete,onRate,onEdit}) {
+  if(!recipe) return null;
+  const ingr=Array.isArray(recipe.ingredients)?recipe.ingredients:[recipe.ingredients].filter(Boolean);
+  return (
+    <div style={{maxWidth:760,margin:"0 auto"}}>
+      <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:"0.88rem",padding:"0 0 1rem",display:"flex",alignItems:"center",gap:4}}>← Terug</button>
+      <div style={{background:"white",borderRadius:14,overflow:"hidden",border:"1px solid #e8e0d4",boxShadow:"0 4px 24px rgba(0,0,0,0.08)"}}>
+        <div style={{background:"linear-gradient(135deg,#f5efe5,#ecddd0)",padding:"3rem",textAlign:"center",fontSize:"5.5rem",lineHeight:1}}>{recipe.image||"🍽️"}</div>
+        <div style={{padding:"2rem"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"1rem",marginBottom:"1rem"}}>
+            <div>
+              <h2 style={{margin:"0 0 0.6rem",fontSize:"1.65rem",fontFamily:"'Playfair Display',serif"}}>{recipe.title}</h2>
+              <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap"}}>
+                <Tag bg="#e8f4e8" color="#2d6a2d">{recipe.category}</Tag>
+                <Tag bg="#e8f0f8" color="#2d4a6a">{recipe.cuisine}</Tag>
+                {recipe.season&&recipe.season!=="Heel het jaar"&&<Tag bg="#fef3e8" color="#7c4a00">{recipe.season}</Tag>}
+                {(recipe.tags||[]).map(t=><Tag key={t}>{t}</Tag>)}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:"0.5rem"}}>
+              <button onClick={onEdit} style={{background:"none",border:"1px solid #ddd",borderRadius:8,padding:"0.4rem 0.9rem",cursor:"pointer",fontSize:"0.82rem"}}>✏️ Bewerken</button>
+              <button onClick={()=>{if(window.confirm("Verwijderen?"))onDelete(recipe.id);}} style={{background:"none",border:"1px solid #ffcdd2",color:"#c62828",borderRadius:8,padding:"0.4rem 0.8rem",cursor:"pointer",fontSize:"0.82rem"}}>🗑</button>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:"1.5rem",flexWrap:"wrap",padding:"1rem 0",borderTop:"1px solid #f0ebe3",borderBottom:"1px solid #f0ebe3",marginBottom:"1.5rem",alignItems:"center"}}>
+            {[[recipe.time,"⏱","min"],[recipe.servings,"👥","personen"]].map(([val,ic,lb])=>(
+              <div key={lb} style={{textAlign:"center"}}>
+                <div style={{fontSize:"1.4rem",fontWeight:800,fontFamily:"'Playfair Display',serif"}}>{val||"—"}</div>
+                <div style={{fontSize:"0.7rem",color:"#999",textTransform:"uppercase",letterSpacing:"0.08em"}}>{ic} {lb}</div>
+              </div>
+            ))}
+            <div>
+              <div style={{fontSize:"0.7rem",color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Beoordeling</div>
+              <Stars rating={recipe.rating} onRate={r=>onRate(recipe.id,r)}/>
+            </div>
+            <div>
+              <div style={{fontSize:"0.7rem",color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Bron</div>
+              <div style={{fontSize:"0.88rem"}}>{srcIcon(recipe.sourceType)} {recipe.source||"Onbekend"}</div>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:"2rem",alignItems:"start"}}>
+            <div>
+              <h3 style={sHead}>Ingrediënten</h3>
+              <ul style={{margin:0,paddingLeft:"1.1rem",lineHeight:2.1,fontSize:"0.9rem"}}>
+                {ingr.map((i,n)=><li key={n}>{i}</li>)}
+              </ul>
+            </div>
+            <div>
+              <h3 style={sHead}>Bereiding</h3>
+              <p style={{lineHeight:1.85,fontSize:"0.9rem",margin:0}}>{recipe.instructions}</p>
+            </div>
+          </div>
+          {recipe.notes&&(
+            <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"1rem 1.25rem",marginTop:"1.5rem"}}>
+              <strong style={{fontSize:"0.8rem"}}>📌 Notities</strong>
+              <p style={{margin:"0.4rem 0 0",lineHeight:1.75,fontSize:"0.9rem"}}>{recipe.notes}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── CARDS ──────────────────────────────────────────────────
+function RecipeCard({recipe,onClick}) {
+  return (
+    <div onClick={onClick} style={{background:"white",borderRadius:12,overflow:"hidden",border:"1px solid #e8e0d4",cursor:"pointer",transition:"transform 0.15s,box-shadow 0.15s",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}
+      onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow="0 12px 32px rgba(0,0,0,0.12)";}}
+      onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.06)";}}>
+      <div style={{background:"linear-gradient(135deg,#f5efe5,#ecddd0)",height:96,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"3rem"}}>{recipe.image||"🍽️"}</div>
+      <div style={{padding:"0.95rem"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"0.45rem"}}>
+          <h3 style={{margin:0,fontSize:"0.93rem",fontFamily:"'Playfair Display',serif",lineHeight:1.3,flex:1}}>{recipe.title}</h3>
+          <span style={{fontSize:"0.8rem",marginLeft:4}}>{srcIcon(recipe.sourceType)}</span>
+        </div>
+        <div style={{display:"flex",gap:"0.3rem",flexWrap:"wrap",marginBottom:"0.65rem"}}>
+          <Tag bg="#e8f4e8" color="#2d6a2d">{recipe.category}</Tag>
+          <Tag bg="#e8f0f8" color="#2d4a6a">{recipe.cuisine}</Tag>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <Stars rating={recipe.rating}/>
+          <span style={{fontSize:"0.73rem",color:"#bbb"}}>⏱ {recipe.time||"?"} min</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecipeRow({recipe,onClick}) {
+  return (
+    <div onClick={onClick} style={{background:"white",borderRadius:10,border:"1px solid #e8e0d4",cursor:"pointer",padding:"0.8rem 1.2rem",display:"flex",alignItems:"center",gap:"1rem",transition:"background 0.1s"}}
+      onMouseEnter={e=>e.currentTarget.style.background="#faf7f2"}
+      onMouseLeave={e=>e.currentTarget.style.background="white"}>
+      <span style={{fontSize:"1.8rem",flexShrink:0}}>{recipe.image||"🍽️"}</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:700,fontFamily:"'Playfair Display',serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{recipe.title}</div>
+        <div style={{fontSize:"0.76rem",color:"#888",marginTop:2}}>{recipe.category} · {recipe.cuisine} · {recipe.time||"?"} min · {recipe.servings||"?"} p.</div>
+      </div>
+      <Stars rating={recipe.rating}/>
+      <span style={{fontSize:"0.73rem",color:"#ccc",flexShrink:0}}>{recipe.date}</span>
+    </div>
+  );
+}
+
+// ── MAIN APP ───────────────────────────────────────────────
+function App() {
+  const [recipes,setRecipes]       = useState(loadLocal);
+  const [search,setSearch]         = useState("");
+  const [filterCat,setFilterCat]   = useState("Alles");
+  const [filterCui,setFilterCui]   = useState("Alles");
+  const [sortBy,setSortBy]         = useState("date");
+  const [viewMode,setViewMode]     = useState("grid");
+  const [page,setPage]             = useState("list");
+  const [selectedId,setSelectedId] = useState(null);
+  const [modal,setModal]           = useState(null);
+  const [jbKey,setJbKey]           = useState(()=>localStorage.getItem("jb_key")||"");
+  const [jbBin,setJbBin]           = useState(()=>localStorage.getItem("jb_bin")||"");
+  const [syncStatus,setSyncStatus] = useState("idle");
+  const [readOnly,setReadOnly]     = useState(false);
+  const syncTimer = useRef(null);
+
+  // Check if opened as share link
+  useEffect(()=>{
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get("share");
+    if(shareId) {
+      setReadOnly(true);
+      const key = localStorage.getItem("jb_key");
+      if(key) {
+        jsonbinLoad(shareId,key).then(data=>{ if(data){setRecipes(data);saveLocal(data);} });
+      } else {
+        // Load as public bin
+        fetch(`https://api.jsonbin.io/v3/b/${shareId}/latest`)
+          .then(r=>r.json()).then(d=>{ if(d.record?.recipes){setRecipes(d.record.recipes);} }).catch(()=>{});
+      }
+    }
+  },[]);
+
+  // Auto-sync to JSONbin after changes
+  useEffect(()=>{
+    saveLocal(recipes);
+    if(!jbKey||!jbBin||readOnly) return;
+    clearTimeout(syncTimer.current);
+    setSyncStatus("saving");
+    syncTimer.current = setTimeout(async()=>{
+      const ok = await jsonbinSave(jbBin,jbKey,recipes);
+      setSyncStatus(ok?"saved":"error");
+      setTimeout(()=>setSyncStatus("synced"),2500);
+    },2000);
+    return()=>clearTimeout(syncTimer.current);
+  },[recipes]);
+
+  const add    = r => setRecipes(p=>[{...r,id:r.id||Date.now()},...p]);
+  const update = r => setRecipes(p=>p.map(x=>x.id===r.id?r:x));
+  const del    = id => { setRecipes(p=>p.filter(x=>x.id!==id)); setPage("list"); };
+  const rate   = (id,rating) => setRecipes(p=>p.map(x=>x.id===id?{...x,rating}:x));
+  const open   = id => { setSelectedId(id); setPage("detail"); };
+  const selected = recipes.find(r=>r.id===selectedId);
+
+  const filtered = useMemo(()=>recipes
+    .filter(r=>filterCat==="Alles"||r.category===filterCat)
+    .filter(r=>filterCui==="Alles"||r.cuisine===filterCui)
+    .filter(r=>{const q=search.toLowerCase();return !q||r.title.toLowerCase().includes(q)||(r.tags||[]).some(t=>t.toLowerCase().includes(q))||(Array.isArray(r.ingredients)?r.ingredients:[r.ingredients||""]).some(i=>i.toLowerCase().includes(q));})
+    .sort((a,b)=>sortBy==="date"?new Date(b.date)-new Date(a.date):sortBy==="rating"?b.rating-a.rating:a.title.localeCompare(b.title)),
+    [recipes,filterCat,filterCui,search,sortBy]);
+
+  const syncLabel = {idle:"☁️ Online opslaan",saving:"⏳ Opslaan…",saved:"✓ Opgeslagen",synced:"✅ Gesynchroniseerd",error:"⚠️ Fout"}[syncStatus]||"☁️ Online opslaan";
+
+  return (
+    <div>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Lato:wght@400;600;700&display=swap');`}</style>
+
+      {readOnly && (
+        <div style={{background:"#1e3a5f",color:"white",textAlign:"center",padding:"0.5rem",fontSize:"0.82rem"}}>
+          👁 Je bekijkt dit receptenboek als gast — je kunt niets bewerken
+        </div>
+      )}
+
+      <header style={{background:"#2c1810",color:"#faf7f2"}}>
+        <div style={{maxWidth:1280,margin:"0 auto",padding:"1.1rem 2rem",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"1rem",flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:"0.75rem",cursor:"pointer"}} onClick={()=>setPage("list")}>
+            <span style={{fontSize:"1.7rem"}}>🍴</span>
+            <div>
+              <h1 style={{margin:0,fontSize:"1.5rem",fontFamily:"'Playfair Display',serif",fontWeight:900}}>Mijn Receptenboek</h1>
+              <p style={{margin:0,fontSize:"0.7rem",opacity:0.45,letterSpacing:"0.14em",textTransform:"uppercase"}}>{recipes.length} recepten</p>
+            </div>
+          </div>
+          {!readOnly && (
+            <div style={{display:"flex",gap:"0.6rem",alignItems:"center",flexWrap:"wrap"}}>
+              <button onClick={()=>setModal("sync")}
+                style={{...ghostBtn,borderColor:jbBin?"rgba(52,211,153,0.5)":"rgba(255,255,255,0.25)",color:jbBin?"#6ee7b7":"#faf7f2"}}>
+                {syncLabel}
+              </button>
+              <button onClick={()=>setModal("url")} style={{...ghostBtn,borderColor:"rgba(96,165,250,0.55)",color:"#93c5fd"}}>🌐 Van website</button>
+              <button onClick={()=>setModal("scan")} style={{...ghostBtn,borderColor:"rgba(217,119,6,0.55)",color:"#fbbf24"}}>📸 Scan recept</button>
+              <button onClick={()=>setModal("add")} style={{background:"#d97706",color:"white",border:"none",borderRadius:8,padding:"0.55rem 1.2rem",cursor:"pointer",fontWeight:700,fontSize:"0.88rem"}}>+ Nieuw recept</button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {page==="list" && (
+        <div style={{background:"#f0ebe3",borderBottom:"1px solid #e0d8cc",position:"sticky",top:0,zIndex:10}}>
+          <div style={{maxWidth:1280,margin:"0 auto",padding:"0.8rem 2rem",display:"flex",gap:"0.65rem",flexWrap:"wrap",alignItems:"center"}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Zoek op naam, ingrediënt of tag…"
+              style={{flex:"1 1 180px",padding:"0.5rem 1rem",borderRadius:8,border:"1px solid #d0c8bc",background:"white",fontSize:"0.87rem"}}/>
+            <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...selStyle,flex:"0 0 auto",width:"auto",background:"white"}}>
+              <option value="Alles">Alle categorieën</option>
+              {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+            </select>
+            <select value={filterCui} onChange={e=>setFilterCui(e.target.value)} style={{...selStyle,flex:"0 0 auto",width:"auto",background:"white"}}>
+              <option value="Alles">Alle keukens</option>
+              {CUISINES.map(c=><option key={c}>{c}</option>)}
+            </select>
+            <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...selStyle,flex:"0 0 auto",width:"auto",background:"white"}}>
+              <option value="date">Nieuwste eerst</option>
+              <option value="rating">Beste beoordeling</option>
+              <option value="alpha">A – Z</option>
+            </select>
+            <div style={{display:"flex",gap:3}}>
+              {["grid","list"].map(v=>(
+                <button key={v} onClick={()=>setViewMode(v)} style={{padding:"0.45rem 0.7rem",border:"1px solid #d0c8bc",borderRadius:6,background:viewMode===v?"#2c1810":"white",color:viewMode===v?"white":"#2c1810",cursor:"pointer",fontSize:"0.9rem"}}>
+                  {v==="grid"?"⊞":"☰"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{maxWidth:1280,margin:"0 auto",padding:"0 2rem 0.7rem",display:"flex",gap:"0.35rem",flexWrap:"wrap"}}>
+            {["Alles",...CATEGORIES].map(c=>(
+              <button key={c} onClick={()=>setFilterCat(c)} style={{padding:"0.22rem 0.75rem",borderRadius:20,border:"1px solid",borderColor:filterCat===c?"#2c1810":"#d0c8bc",background:filterCat===c?"#2c1810":"white",color:filterCat===c?"white":"#666",cursor:"pointer",fontSize:"0.73rem",fontWeight:700,transition:"all 0.1s"}}>
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <main style={{maxWidth:1280,margin:"0 auto",padding:"1.5rem 2rem 4rem"}}>
+        {page==="detail"&&selected?(
+          <RecipeDetail recipe={selected} onBack={()=>setPage("list")} onDelete={del} onRate={rate} onEdit={()=>setModal("edit")}/>
+        ):filtered.length===0?(
+          <div style={{textAlign:"center",padding:"5rem 1rem",color:"#bbb"}}>
+            <div style={{fontSize:"4rem"}}>🍽️</div>
+            <p style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"#888",marginTop:"1rem"}}>Geen recepten gevonden</p>
+            {!readOnly&&<button onClick={()=>setModal("add")} style={{marginTop:"1rem",background:"#2c1810",color:"white",border:"none",borderRadius:8,padding:"0.6rem 1.5rem",cursor:"pointer",fontWeight:700}}>+ Eerste recept toevoegen</button>}
+          </div>
+        ):viewMode==="grid"?(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(255px,1fr))",gap:"1.1rem"}}>
+            {filtered.map(r=><RecipeCard key={r.id} recipe={r} onClick={()=>open(r.id)}/>)}
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:"0.5rem"}}>
+            {filtered.map(r=><RecipeRow key={r.id} recipe={r} onClick={()=>open(r.id)}/>)}
+          </div>
+        )}
+      </main>
+
+      {modal==="sync" && <SyncModal onClose={()=>setModal(null)} currentRecipes={recipes} onSynced={(k,b)=>{setJbKey(k);setJbBin(b);setSyncStatus("synced");}}/>}
+      {modal==="scan" && <ScanModal onClose={()=>setModal(null)} onImport={r=>{add(r);open(r.id);}}/>}
+      {modal==="url"  && <UrlModal  onClose={()=>setModal(null)} onImport={r=>{add(r);open(r.id);}}/>}
+      {modal==="add"  && <RecipeModal onClose={()=>setModal(null)} onSave={r=>{add(r);open(r.id);}}/>}
+      {modal==="edit" && selected && <RecipeModal initial={selected} onClose={()=>setModal(null)} onSave={r=>{update(r);setModal(null);}}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
